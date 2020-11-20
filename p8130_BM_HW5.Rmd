@@ -1,16 +1,30 @@
 ---
-title: "Simple document"
+title: "BM HW5"
 author: JingYao Geng
 date: '`r format(Sys.time(), "%Y-%m-%d")`'
-output: html_document
+output: 
+  pdf_document:
+    latex_engine: "xelatex"
 ---
 
 ```{r setup, include = FALSE}
+library(tidyverse)
+library(readxl)
+library(magick)
+library(readr)
+library(arsenal)
+library(dplyr)
+library(ggplot2)
+library(faraway)
+library(broom)
 
 knitr::opts_chunk$set(
   fig.width = 6,
   fig.asp = .6,
-  out.width = "90%"
+  out.width = "90%",
+  warning = FALSE, 
+  message = FALSE, 
+  collapse = TRUE
 )
 
 theme_set(theme_minimal() + theme(legend.position = "bottom"))
@@ -23,3 +37,170 @@ options(
 scale_colour_discrete = scale_color_viridis_d
 scale_fill_discrete = scale_fill_viridis_d
 ```
+
+## Problem 1
+ 
+**Given the non-normal distributions, now you are asked to use an alternative, non-parametric test to assess and comment on the difference in Ig-M levels between the two groups (please ignore unanswered and missing values).**
+
+```{r}
+# import:
+anti = read_csv("./data/Antibodies.csv") %>% 
+  janitor::clean_names() %>% 
+  filter(smell != "Unanswered/Others") %>% 
+  drop_na() 
+
+# check the normal approximation assumption: 
+  n = anti %>%  group_by(smell) %>%  count() # normal: 81, altered: 178. yes!
+
+# tidy:
+anti_tidy = anti %>%
+  mutate(rank = rank(antibody_ig_m)) %>%
+  pivot_wider(
+      names_from = "smell",
+      values_from = "antibody_ig_m"
+    ) %>%
+  arrange(rank) %>%
+  select(rank, Normal, Altered) # duplicated values observed, rank ties.
+
+# find the ties:
+ties = anti_tidy %>% count(rank) %>% filter(n > 1) %>% pull(n)
+
+# the null expectation of T1 
+n2 = n$n[1] # 178 Altered
+n1 = n$n[2] # 81 Normal
+
+# the test statistics T for ties:
+t1 = anti_tidy %>% drop_na(Normal) %>% summarise(t1 = sum(rank)) # 9157
+t = (abs(t1 - n1 * (n1 + n2 + 1) / 2) - 1/2) #1372.5
+T = t/sqrt(n1*n2/12 * (n1 + n2 + 1 - sum(ties*(ties^2 - 1))/((n1 + n2)*(n1 + n2 + 1)))) # 2.455714
+t_crit = qnorm(0.975) #1.96
+
+# wilcoxon Rank-Sum test: 
+test = wilcox.test(anti_tidy %>% pull(Normal), anti_tidy %>% pull(Altered), mu = 0)
+# we need to add the n1(n1+1)/2 term, for the same value of t1 = 9157
+test$statistic = test$statistic + n1*(n1 + 1)/2; test
+
+
+```
+
+
+After ignoring the unanswered and missing values from the antibodies dataset, we have 2 smell groups: "Normal" and "Altered" in terms of the Ig-M levels. There are 178 observations in the "Altered" group and 81 observations in the "Normal" group. We will use **Wilcoxon Rank-Sum test**: the non parametric equivalent of the Two Sample Independent t-test.
+
+
+**Hypotheses to  be tested are:**
+
+$H_0$ : The medians of IgM level of the two groups (Normal and Altered) are equal.
+
+$H_1$ : The medians of IgM level of the two groups are not equal. 
+
+* Normal-Approximation is satisfied: $n_{normal}~~and~~n_{altered} \geq 10$
+
+**Test Statistics:**
+With ties, the test statistic is:
+$T = \frac{|T_1 - \frac{n_1(n_1+n_2+1)}{2}|-\frac{1}{2}}{\sqrt{(n_1n_2/12)[(n_1+n_2+1) - \sum^{g}_{i=1}t_i(t_i^2-1)/(n_1+n_2)(n_1+n_2-1)]}}$
+
+
+**Decision Rule:**
+
+$Reject~~H_0:~T>z_{1-\alpha/2}$, with p_value = $2 ×[1- \Phi(T)]$
+
+$Fail~~to~~reject~~H_0,~~otherwise.$
+
+
+**Conclusion**
+
+Based on the p-value 0.01406 from the Wilcoxon Rank-Sum test, we reject the null, and conclude that the medians of IgM level are not euqal for the Normal group and Altered group at significance level of 0.05. Moreover, we find the test statistic T is equal to 2.455714, which is greater than the t_crit value of 1.96. This indicates that we reject the null hypotheses as well.
+
+
+
+
+
+
+
+
+
+
+## Problem 3
+
+#### _Generate a scatter plot and test whether a linear association exists between student’s ACT score (X) and GPA at the end of the freshman year (Y). Use a level of significance of 0.05._
+
+```{r}
+gpa = read_csv("./data/GPA.csv") %>%
+  janitor::clean_names()
+gpa_r = lm(gpa~act, data = gpa)
+summary(gpa_r) 
+anova(gpa_r)
+tidy(gpa_r) %>% knitr::kable()
+qt(0.975, 118) #1.980272
+```
+
+
+**Hypotheses: **
+
+$H0:\beta_{1}=\beta_{10}$ 
+
+$H1:\beta_{1}\neq\beta_{10}~(where~~\beta_{10}=0)$
+
+**Test statistics**
+
+$t_{stat} = \frac{\hat{\beta_{1}}-\beta_{10}}{se(\hat{\beta_{1}})} = \frac{0.03883-0}{0.01277} \cong 3.0407$ 
+
+$t_{n-2,1-\alpha/2} = t_{118,0.975} \cong 1.980272$
+
+
+**Decision Rule**
+
+Reject H0 if $|t|>t_{n-2,1-\alpha/2}$
+Fail to reject H0, otherwise.
+
+**Conclusion**
+
+Since $t_{stats} = 3.0407>t_{118,0.975}= 1.980272$ , we reject the null hypothese and conclude that $\beta_{1}\neq\beta_{10}$, at 0.05 significant level, there is a significant linear association between student’s ACT score and GPA at the end of the freshman year.
+
+**Scatter plot with regression and 95% confidence band:
+```{r scatter plot}
+gpa %>%
+  ggplot(aes(act, gpa)) +
+  geom_point() +
+  theme_bw(base_size = 20) +
+  geom_smooth(method = 'lm', se = TRUE, color = 'red')
+
+```
+
+**Estimated regression line equation**
+The estimated slope is 0.0388271, estimated intercept is 2.1140493.
+$\hat{GPA}= 2.1140493~+~0.0388271\times ACT$
+
+**95% confidence interval for β1**
+
+A 95% confidence interval for the true slope is:
+
+$\hat{\beta_{1}}\pm t_{n-2,1-\alpha/2}*se(\hat{\beta_{1}})$
+
+where $se(\hat{\beta_{1}})=\sqrt{MSE/\sum_{i=1}^{n}(X_{i}-\bar{X})^2}$
+
+```{r}
+confint(gpa_r,level = 0.95)
+```
+
+Thus, the 95% confidence interval for the true slope is **(0.01353307, 0.06412118)**. It does not include zero in the interval.
+
+**95% confidence interval when ACT is 28**
+
+```{r}
+predict(gpa_r, data.frame(act = 28), interval = "confidence", level = 0.95)
+```
+
+The 95% interval estimate of the mean freshman GPA for students whose ACT test score 
+is 28 is between 3.061384 and 3.341033. We are 95% confident that the true mean freshman GPA for students with a ACT score of 28 lies in interval (3.061384, 3.341033).
+
+
+**95% prediction interval when ACT is 28**
+```{r}
+predict(gpa_r, data.frame(act = 28), interval = "prediction", level = 0.95)
+```
+
+The 95% prediction interval for Anne when she obtained a ACT score of 28 is between 1.959355 and 4.443063. 
+
+
+The prediction interval is wider than the confidence interval because dor prediction interval, we have another term to account for: the error term. We have a larger standard error in the prediction interval, which causes the prediction interval wider than the confidence interval.
